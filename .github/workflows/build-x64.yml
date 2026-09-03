@@ -1,39 +1,5 @@
 name: build-x64
 on:
-  workflow_call:
-    inputs:
-      upstream_tag:
-        description: Exact ungoogled-chromium-windows tag to build
-        type: string
-        required: true
-      fk_revision:
-        description: Positive FK release revision
-        type: number
-        required: false
-        default: 1
-      force_rebuild:
-        description: Bypass the duplicate-attempt guard
-        type: boolean
-        required: false
-        default: false
-      publish:
-        description: Allow a successful build to be published
-        type: boolean
-        required: false
-        default: false
-    outputs:
-      finished:
-        description: Whether the staged build completed
-        value: ${{ jobs.build.outputs.finished }}
-      upstream_version:
-        description: Four-part Chromium version
-        value: ${{ jobs.build.outputs.upstream_version }}
-      release_tag:
-        description: FK Chromium release tag
-        value: ${{ jobs.build.outputs.release_tag }}
-      publish:
-        description: Whether the completed build may be published
-        value: ${{ jobs.build.outputs.publish }}
   workflow_dispatch:
     inputs:
       upstream_tag:
