@@ -5,6 +5,7 @@ on:
       - master
     paths:
       - .github/workflows/diagnose-reusable-entry.yml
+      - .github/workflows/diagnose-reusable.yml
 
 permissions:
   contents: read
@@ -12,3 +13,10 @@ permissions:
 jobs:
   call:
     uses: ./.github/workflows/diagnose-reusable.yml
+    with:
+      upstream_tag: 152.0.7977.75-1.1
+      upstream_ref: abcdef0123456789abcdef0123456789abcdef01
+      fk_revision: 1
+      force_rebuild: false
+      publish: false
+      branding_ref: 0123456789abcdef0123456789abcdef01234567
