@@ -54,7 +54,7 @@ def test_build_identity_reads_the_real_ungoogled_chromium_gitlink():
 
 
 def test_build_inputs_include_safe_nonpublishing_default_and_outputs():
-    """Defaulting publish true or dropping release identity outputs must break the dispatch boundary."""
+    """Defaulting publish true or dropping reusable release outputs must break the dispatch boundary."""
     reusable = _read(_WORKFLOWS / "reusable-build.yml")
     entrypoint = _read(_WORKFLOWS / "build-x64.yml")
 
@@ -67,10 +67,12 @@ def test_build_inputs_include_safe_nonpublishing_default_and_outputs():
             r"(?:(?!^\s{6}\w).)*?^\s{8}default: false$",
             workflow,
         )
-        assert re.search(r"(?m)^\s{6}finished:$", workflow)
-        assert re.search(r"(?m)^\s{6}upstream_version:$", workflow)
-        assert re.search(r"(?m)^\s{6}release_tag:$", workflow)
-        assert re.search(r"(?m)^\s{6}publish:$", workflow)
+
+    assert "  workflow_call:" not in entrypoint
+    assert re.search(r"(?m)^\s{6}finished:$", reusable)
+    assert re.search(r"(?m)^\s{6}upstream_version:$", reusable)
+    assert re.search(r"(?m)^\s{6}release_tag:$", reusable)
+    assert re.search(r"(?m)^\s{6}publish:$", reusable)
 
     assert "group: fk-x64-${{ inputs.upstream_tag }}" in reusable
     assert "cancel-in-progress: false" in reusable
