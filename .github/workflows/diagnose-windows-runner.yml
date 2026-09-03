@@ -1,0 +1,19 @@
+name: diagnose-windows-runner
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/diagnose-windows-runner.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - name: Confirm Windows runner scheduling
+        shell: pwsh
+        run: Write-Output 'windows-2022 runner scheduled successfully'
