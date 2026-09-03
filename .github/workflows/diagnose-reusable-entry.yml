@@ -1,0 +1,14 @@
+name: diagnose-reusable-entry
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/diagnose-reusable-entry.yml
+
+permissions:
+  contents: read
+
+jobs:
+  call:
+    uses: ./.github/workflows/diagnose-reusable.yml
