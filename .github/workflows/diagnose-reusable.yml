@@ -30,7 +30,7 @@ on:
     outputs:
       finished:
         description: Probe result
-        value: ${{ jobs.probe-12.outputs.finished }}
+        value: ${{ jobs.build-1.outputs.finished }}
 
 permissions:
   contents: read
@@ -40,163 +40,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  probe-1:
+  build-1:
     runs-on: windows-2022
     timeout-minutes: 5
     steps:
-      - name: Confirm stage 1 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 1 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Prepare FK build
+        id: prepare
+        uses: ./.github/actions/prepare-fk
+        with:
+          python_version: ${{ inputs.python_version }}
+          upstream_tag: ${{ inputs.upstream_tag }}
+          upstream_ref: ${{ inputs.upstream_ref }}
+          fk_revision: ${{ inputs.fk_revision }}
+          force_rebuild: ${{ inputs.force_rebuild }}
+          publish: ${{ inputs.publish }}
+          branding_ref: ${{ inputs.branding_ref }}
+      - name: Run stage
+        id: stage
+        uses: ./.github/actions/stage
+        with:
+          finished: false
+          from_artifact: false
     outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-2:
-    needs: probe-1
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 2 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 2 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-3:
-    needs: probe-2
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 3 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 3 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-4:
-    needs: probe-3
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 4 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 4 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-5:
-    needs: probe-4
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 5 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 5 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-6:
-    needs: probe-5
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 6 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 6 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-7:
-    needs: probe-6
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 7 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 7 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-8:
-    needs: probe-7
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 8 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 8 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-9:
-    needs: probe-8
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 9 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 9 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-10:
-    needs: probe-9
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 10 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 10 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-11:
-    needs: probe-10
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 11 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 11 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  probe-12:
-    needs: probe-11
-    runs-on: windows-2022
-    timeout-minutes: 5
-    steps:
-      - name: Confirm stage 12 scheduling
-        id: result
-        shell: pwsh
-        run: |
-          Write-Output 'reusable Windows stage 12 scheduled successfully'
-          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
-    outputs:
-      finished: ${{ steps.result.outputs.finished }}
-  complete:
-    needs: probe-12
-    runs-on: ubuntu-latest
-    steps:
-      - run: test "${{ needs.probe-12.outputs.finished }}" = "true"
+      finished: ${{ steps.stage.outputs.finished }}
