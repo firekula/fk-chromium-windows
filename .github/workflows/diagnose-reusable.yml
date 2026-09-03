@@ -1,15 +1,54 @@
 name: diagnose-reusable
 on:
   workflow_call:
+    inputs:
+      python_version:
+        type: string
+        required: false
+        default: '3.12'
+      upstream_tag:
+        type: string
+        required: true
+      upstream_ref:
+        type: string
+        required: true
+      fk_revision:
+        type: number
+        required: false
+        default: 1
+      force_rebuild:
+        type: boolean
+        required: false
+        default: false
+      publish:
+        type: boolean
+        required: false
+        default: false
+      branding_ref:
+        type: string
+        required: true
+    outputs:
+      finished:
+        description: Probe result
+        value: ${{ jobs.probe-1.outputs.finished }}
 
 permissions:
   contents: read
 
+concurrency:
+  group: diagnose-${{ inputs.upstream_tag }}
+  cancel-in-progress: false
+
 jobs:
-  probe:
+  probe-1:
     runs-on: windows-2022
     timeout-minutes: 5
     steps:
       - name: Confirm reusable workflow scheduling
+        id: result
         shell: pwsh
-        run: Write-Output 'reusable Windows workflow scheduled successfully'
+        run: |
+          Write-Output 'reusable Windows workflow scheduled successfully'
+          Add-Content -Path $env:GITHUB_OUTPUT -Value 'finished=true'
+    outputs:
+      finished: ${{ steps.result.outputs.finished }}
