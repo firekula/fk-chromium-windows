@@ -1,0 +1,15 @@
+name: diagnose-reusable
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - name: Confirm reusable workflow scheduling
+        shell: pwsh
+        run: Write-Output 'reusable Windows workflow scheduled successfully'
