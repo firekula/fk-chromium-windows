@@ -1,0 +1,32 @@
+[
+  {
+    "name": "151.0.7922.99-9.1",
+    "zipball_url": "https://api.github.com/repos/ungoogled-software/ungoogled-chromium-windows/zipball/refs/tags/151.0.7922.99-9.1",
+    "tarball_url": "https://api.github.com/repos/ungoogled-software/ungoogled-chromium-windows/tarball/refs/tags/151.0.7922.99-9.1",
+    "commit": {
+      "sha": "1111111111111111111111111111111111111111",
+      "url": "https://api.github.com/repos/ungoogled-software/ungoogled-chromium-windows/commits/1111111111111111111111111111111111111111"
+    },
+    "node_id": "REF_kwDOFixtureTagOne"
+  },
+  {
+    "name": "151.0.7922.173-beta",
+    "zipball_url": "https://api.github.com/repos/ungoogled-software/ungoogled-chromium-windows/zipball/refs/tags/151.0.7922.173-beta",
+    "tarball_url": "https://api.github.com/repos/ungoogled-software/ungoogled-chromium-windows/tarball/refs/tags/151.0.7922.173-beta",
+    "commit": {
+      "sha": "2222222222222222222222222222222222222222",
+      "url": "https://api.github.com/repos/ungoogled-software/ungoogled-chromium-windows/commits/2222222222222222222222222222222222222222"
+    },
+    "node_id": "REF_kwDOFixtureTagTwo"
+  },
+  {
+    "name": "151.0.7922.173-1.1",
+    "zipball_url": "https://api.github.com/repos/ungoogled-software/ungoogled-chromium-windows/zipball/refs/tags/151.0.7922.173-1.1",
+    "tarball_url": "https://api.github.com/repos/ungoogled-software/ungoogled-chromium-windows/tarball/refs/tags/151.0.7922.173-1.1",
+    "commit": {
+      "sha": "3333333333333333333333333333333333333333",
+      "url": "https://api.github.com/repos/ungoogled-software/ungoogled-chromium-windows/commits/3333333333333333333333333333333333333333"
+    },
+    "node_id": "REF_kwDOFixtureTagThree"
+  }
+]

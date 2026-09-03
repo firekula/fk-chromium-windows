@@ -1,0 +1,62 @@
+diff --git a/chrome/install_static/chromium_install_modes.h b/chrome/install_static/chromium_install_modes.h
+index f29a822..cd94f2a 100644
+--- a/chrome/install_static/chromium_install_modes.h
++++ b/chrome/install_static/chromium_install_modes.h
+@@ -22,6 +22,6 @@ inline constexpr wchar_t kCompanyPathName[] = L"";
+ // The brand-specific product name to be included as a component of the install
+ // and user data directory paths.
+-inline constexpr wchar_t kProductPathName[] = L"Chromium";
+-
++inline constexpr wchar_t kProductPathName[] = L"FK Chromium";
++
+ // The brand-specific safe browsing client name.
+ inline constexpr char kSafeBrowsingName[] = "chromium";
+@@ -44,29 +44,29 @@ inline constexpr auto kInstallModes = std::to_array<InstallConstants>({
+             L"",  // Empty install_suffix for the primary install mode.
+         .logo_suffix = L"",  // No logo suffix for the primary install mode.
+         .app_guid =
+-            L"",  // Empty app_guid since no integration with Google Update.
+-        .base_app_name = L"Chromium",              // A distinct base_app_name.
+-        .base_app_id = L"Chromium",                // A distinct base_app_id.
+-        .browser_prog_id_prefix = L"ChromiumHTM",  // Browser ProgID prefix.
++            L"{385317E5-D454-45E9-9A3A-D240C07A3AC0}",  // FK Chromium app GUID.
++        .base_app_name = L"FK Chromium",         // A distinct base_app_name.
++        .base_app_id = L"FKChromium",            // A distinct base_app_id.
++        .browser_prog_id_prefix = L"FKChromHTM",  // Browser ProgID prefix.
+         .browser_prog_id_description =
+-            L"Chromium HTML Document",  // Browser ProgID description.
+-        .direct_launch_url_scheme = "chromium",
+-        .pdf_prog_id_prefix = L"ChromiumPDF",  // PDF ProgID prefix.
++            L"FK Chromium HTML Document",  // Browser ProgID description.
++        .direct_launch_url_scheme = "fkchromium",
++        .pdf_prog_id_prefix = L"FKChromPDF",  // PDF ProgID prefix.
+         .pdf_prog_id_description =
+-            L"Chromium PDF Document",  // PDF ProgID description.
++            L"FK Chromium PDF Document",  // PDF ProgID description.
+         .active_setup_guid =
+-            L"{7D2B3E1D-D096-4594-9D8F-A6667F12E0AC}",  // Active Setup
++            L"{6782E06C-9D57-4F60-906F-7BD0B6C5C935}",  // Active Setup
+                                                         // GUID.
+-        .toast_activator_clsid = {0x635EFA6F,
+-                                  0x08D6,
+-                                  0x4EC9,
+-                                  {0xBD, 0x14, 0x8A, 0x0F, 0xDE, 0x97, 0x51,
+-                                   0x59}},  // Toast Activator CLSID.
+-        .elevator_clsid = {0xD133B120,
+-                           0x6DB4,
+-                           0x4D6B,
+-                           {0x8B, 0xFE, 0x83, 0xBF, 0x8C, 0xA1, 0xB1,
+-                            0xB0}},  // Elevator CLSID.
++        .toast_activator_clsid = {0xEFBECFD4,
++                                  0x69ED,
++                                  0x47B7,
++                                  {0x90, 0xF9, 0x0A, 0xDD, 0x86, 0xCF, 0xD6,
++                                   0x3A}},  // Toast Activator CLSID.
++        .elevator_clsid = {0xDA37F775,
++                           0x297F,
++                           0x4681,
++                           {0x8B, 0xE8, 0x02, 0xA1, 0x7F, 0x61, 0x88,
++                            0x49}},  // Elevator CLSID.
+         .elevator_iid = {0xbb19a0e5,
+                          0xc6,
+                          0x4966,

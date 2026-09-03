@@ -1,1 +1,5 @@
 /build
+
+
+# Isolated implementation worktrees
+/.worktrees/

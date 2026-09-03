@@ -1,173 +1,79 @@
-# ungoogled-chromium-windows
+# FK Chromium for Windows
 
-Windows packaging for [ungoogled-chromium](//github.com/Eloston/ungoogled-chromium).
+This repository builds **FK Chromium** (**火焰库拉浏览器**) for **Windows x64**. It combines the Windows packaging from [ungoogled-chromium-windows](https://github.com/ungoogled-software/ungoogled-chromium-windows) with the FK brand overlay from [firekula/fk-chromium](https://github.com/firekula/fk-chromium). The Windows automation and packaging source lives in [firekula/fk-chromium-windows](https://github.com/firekula/fk-chromium-windows).
 
-## Downloads
+The first release changes branding and release automation only. Windows code signing is not provided. In-browser automatic updates are not provided. It does not add browser features, change the homepage or search engine, or build x86/ARM64 packages.
 
-[Download binaries from the Contributor Binaries website](//ungoogled-software.github.io/ungoogled-chromium-binaries/).
+## Downloads and security
 
-Or install using `winget install --id=eloston.ungoogled-chromium -e`.
+Each release contains exactly:
 
-**Source Code**: It is recommended to use a tag via `git checkout` (see building instructions below). You may also use `master`, but it is for development and may not be stable.
+- `FK-Chromium-<version>-Windows-x64-Installer.exe`
+- `FK-Chromium-<version>-Windows-x64-Portable.zip`
+- `SHA256SUMS.txt`
 
-## Building
+Verify each download against `SHA256SUMS.txt` before running it.
 
-Google only supports [Windows 10 x64 or newer](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/windows_build_instructions.md#system-requirements). These instructions are tested on Windows 10 Pro x64.
+These builds are **unsigned**. They have no Windows code-signing certificate, so Microsoft Defender SmartScreen may show a warning. Check the release tag, source commit, and SHA-256 checksum before deciding whether to continue. The project does not claim that an unsigned installer is trusted merely because it was downloaded from GitHub.
 
-NOTE: The default configuration will build 64-bit binaries for maximum security (TODO: Link some explanation). This can be changed to 32-bit by setting `target_cpu` to `"x86"` in `flags.windows.gn` or passing `--x86` as an argument to `build.py`.
+## Automatic builds
 
-### Setting up the build environment
+`.github/workflows/check-upstream.yml` runs daily at the cron schedule `17 3 * * *` (03:17 UTC). It accepts only canonical stable `ungoogled-chromium-windows` tags, records a revision reservation, and dispatches the x64 build. A full build can use up to **12** sequential GitHub-hosted Windows stages and typically needs about **1–2 days**. A fatal stage or an unfinished twelfth stage prevents publication.
 
-**IMPORTANT**: Please setup only what is referenced below. Do NOT setup other Chromium compilation tools like `depot_tools`, since we have a custom build process which avoids using Google's pre-built binaries.
+Successful publishing produces a tag of the form `<chromium-version>-fk.<revision>`. Publication validates the exact successful workflow attempt, release-state reservation, artifact names, and checksums before creating a release. Failed runs create or update one `fk-build-failure` Issue for that Chromium version.
 
-#### Setting up Visual Studio
+### Manual detection and retry
 
-[Follow the "Visual Studio" section of the official Windows build instructions](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/windows_build_instructions.md#visual-studio).
+Use **Actions → check-upstream → Run workflow** for the normal operator path:
 
-* Make sure to read through the entire section and install/configure all the required components.
-* If your Visual Studio is installed in a directory other than the default, you'll need to set a few environment variables to point the toolchains to your installation path. (Copied from [instructions for Electron](https://electronjs.org/docs/development/build-instructions-windows))
-	* `vs2019_install = DRIVE:\path\to\Microsoft Visual Studio\2019\Community` (replace `2019` and `Community` with your installed versions)
-	* `WINDOWSSDKDIR = DRIVE:\path\to\Windows Kits\10`
-	* `GYP_MSVS_VERSION = 2019` (replace 2019 with your installed version's year)
+- `upstream_tag`: leave blank to select the latest stable tag, or enter the exact six-component upstream tag such as `151.0.7922.173-1.1`.
+- `force_rebuild`: set to `true` only after fixing a failed build; this reuses a reservation only when the exact supplied tag owns the lowest unresolved FK revision for that four-part Chromium version.
+- `rerelease`: after an exact upstream tag has already published successfully, set this to `true` with that `upstream_tag` to allocate the next collision-free FK revision (`fk.2`, then `fk.3`, and so on). This post-success re-release path is distinct from failure retry and must not be combined with `force_rebuild=true`. Any unresolved reservation serializes every packaging tag for the same four-part Chromium version; retry the exact blocked `upstream_tag` with `force_rebuild=true`, always processing the lowest unresolved FK revision first, before requesting any new revision.
 
+After a failure, inspect the linked run, fix and merge the cause, manually reopen the matching `fk-build-failure` Issue if it is closed, then run `check-upstream` with the same `upstream_tag` and `force_rebuild=true`. The reporter appends attempt-specific diagnostics to the existing Issue; close it only after the retry succeeds.
 
-#### Other build requirements
+For a corrected post-success release of the same upstream source, review the prior release and public tags, then run `check-upstream` with the exact `upstream_tag` and `rerelease=true`. The detector allocates the next FK revision from recorded reservation and success high-water marks, and the publisher separately preflights the exact public tag. It never adopts, deletes, or overwrites an existing release; any public residue at the selected tag fails closed for manual inspection.
 
-**IMPORTANT**: Currently, the `MAX_PATH` path length restriction (which is 260 characters by default) must be lifted in for our Python build scripts. This can be lifted in Windows 10 (v1607 or newer) with the official installer for Python 3.11 or newer (you will see a button at the end of installation to do this). See [Issue #345](https://github.com/Eloston/ungoogled-chromium/issues/345) for other methods for older Windows versions.
+For a direct diagnostic build, use **Actions → build-x64 → Run workflow**:
 
-1. Setup the following:
-    * 7-Zip
-    * Python 3.11 or above
-		* Can be installed using WinGet or the Microsoft Store.
-		* If you don't plan on using the Microsoft Store version of Python:
-			* Check "Add python.exe to PATH" before install.
-			* At the end of the Python installer, click the button to lift the `MAX_PATH` length restriction.
-			* Disable the `python3.exe` and `python.exe` aliases in `Settings > Apps > Advanced app settings > App execution aliases`. They will typically be referred to as "App Installer". See [this question on stackoverflow.com](https://stackoverflow.com/questions/57485491/python-python3-executes-in-command-prompt-but-does-not-run-correctly) to understand why.
-			* Ensure that your Python directory either has a copy of Python named "python3.exe" or a symlink linking to the Python executable.
-		* The `httplib2` module at version 0.22.0. This can be installed using `pip install httplib2==0.22.0`.
-    * Make sure to lift the `MAX_PATH` length restriction, either by clicking the button at the end of the Python installer or by [following these instructions](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry#:~:text=Enable,Later).
-    * Git (to fetch all required ungoogled-chromium scripts)
-        * During setup, make sure "Git from the command line and also from 3rd-party software" is selected. This is usually the recommended option.
+- `upstream_tag`: exact canonical upstream Windows tag (required).
+- `fk_revision`: positive reserved FK release revision; normally use the value recorded in `release-state.json`.
+- `force_rebuild`: recorded in build metadata as provenance for a direct build; it does not block or bypass duplicate direct workflow execution. Use the `check-upstream` retry path above when the attempted-version guard must be bypassed.
+- `publish`: defaults to `false`; leave it false for diagnostics. Set it true only when the state reservation and release intent have been reviewed.
 
-### Building
+Tag-push builds are also non-publishing by default. Never increment `fk_revision` merely to work around a failed attempt; the scheduled detector owns revision allocation.
 
-Run in `Developer Command Prompt for VS` (as administrator):
+## Repository setup
 
-```cmd
-git clone --recurse-submodules https://github.com/ungoogled-software/ungoogled-chromium-windows.git
-cd ungoogled-chromium-windows
-# Replace TAG_OR_BRANCH_HERE with a tag or branch name
-git checkout --recurse-submodules TAG_OR_BRANCH_HERE
-python3 build.py
-python3 package.py
+Keep both FK repositories public so the standard GitHub-hosted runners remain free. Enable GitHub Actions and allow the repository `GITHUB_TOKEN` to receive the permissions declared by each job; no separate publishing secret is expected. Keep the Windows default branch protected and review changes to workflows, `release-state.json`, brand assets, and patches before merging. Scheduled workflows run from the default branch, so merge a tested configuration there before expecting daily detection.
+
+Do not add a signing secret until there is a real Windows code-signing process and certificate. This first version deliberately publishes unsigned files.
+
+## Local verification
+
+The automated build is designed for public repositories on free GitHub-hosted runners. Before changing build or release logic, run:
+
+```bash
+python -m pytest tests -q
+python -m compileall tools
+node --check .github/actions/stage/index.js
+git diff --check
 ```
 
-A zip archive and an installer will be created under `build`.
+The FK brand repository should also pass:
 
-**NOTE**: If the build fails, you must take additional steps before re-running the build:
-
-* If the build fails while downloading the Chromium source code (which is during `build.py`), it can be fixed by removing `build\download_cache` and re-running the build instructions.
-* If the build fails at any other point during `build.py`, it can be fixed by removing everything under `build` other than `build\download_cache` and re-running the build instructions. This will clear out all the code used by the build, and any files generated by the build.
-
-An efficient way to delete large amounts of files is using `Remove-Item PATH -Recurse -Force`. Be careful however, files deleted by that command will be permanently lost.
-
-## Developer info
-
-### First-time setup
-
-1. [Setup MSYS2](http://www.msys2.org/)
-2. Run the following in a "MSYS2 MSYS" shell:
-
-```sh
-pacman -S quilt python3 vim tar dos2unix
-# By default, there doesn't seem to be a vi command for less, quilt edit, etc.
-ln -s /usr/bin/vim /usr/bin/vi
+```bash
+python -m pytest branding/tests utils/tests devutils/tests -q
+python devutils/validate_patches.py -l <clean-chromium-source> -s patches/series
+git diff --check
 ```
 
-### Updating patches and pruning list
+The first public release also requires the real Windows checks in [docs/release-checklist.md](docs/release-checklist.md). GitHub-hosted runners do not replace interactive installation, upgrade, shortcut, user-data isolation, portable, and uninstall testing.
 
-1. Start `Developer Command Prompt for VS` and `MSYS2 MSYS` shell and navigate to source folder
-	1. `Developer Command Prompt for VS`
-		* `cd c:\path\to\repo\ungoogled-chromium-windows`
-	1. `MSYS2 MSYS`
-		* `cd /path/to/repo/ungoogled-chromium-windows`
-		* You can use Git Bash to determine the path to this repo
-		* Or, you can find it yourself via `/<drive letter>/<path with forward slashes>`
-1. Retrieve downloads
-	**`Developer Command Prompt for VS`**
-	* `mkdir "build\download_cache"`
-	* `python3 ungoogled-chromium\utils\downloads.py retrieve -i downloads.ini -c build\download_cache`
-1. Clone sources
-	**`Developer Command Prompt for VS`**
-	* `python3 ungoogled-chromium\utils\clone.py -o build\src`
-1. Check for rust version change (see below)
-1. Update pruning list
-	**`Developer Command Prompt for VS`**
-	* `python3 ungoogled-chromium\devutils\update_lists.py -t build\src --domain-regex ungoogled-chromium\domain_regex.list`
-1. Unpack downloads
-	**`Developer Command Prompt for VS`**
-	* `python3 ungoogled-chromium\utils\downloads.py unpack -i downloads.ini -c build\download_cache build\src`
-1. Apply ungoogled-chromium patches
-	**`Developer Command Prompt for VS`**
-	* `python3 ungoogled-chromium\utils\patches.py apply --patch-bin build\src\third_party\git\usr\bin\patch.exe build\src ungoogled-chromium\patches`
-1. Update windows patches
-	**`MSYS2 MSYS`**
-	1. Setup shell to update patches
-		* `source devutils/set_quilt_vars.sh`
-	1. Go into the source tree
-		* `cd build/src`
-	1. Fix line breaks of files to patch
-		* `grep -r ../../patches/ -e "^+++" | awk '{print substr($2,3)}' | xargs dos2unix`
-	1. Use quilt to refresh patches. See ungoogled-chromium's [docs/developing.md](https://github.com/Eloston/ungoogled-chromium/blob/master/docs/developing.md#updating-patches) section "Updating patches" for more details
-	1. Go back to repo root
-		* `cd ../..`
-	1. Sanity checking for consistency in series file
-		* `./devutils/check_patch_files.sh`
-1. Use Git to add changes and commit
+Release notes identify FK Chromium as 火焰库拉浏览器.
 
-### Update dependencies
+## Upstream and license
 
-**NOTE:** For all steps, update `downloads.ini` accordingly.
+This project is derived from [ungoogled-chromium](https://github.com/ungoogled-software/ungoogled-chromium), [ungoogled-chromium-windows](https://github.com/ungoogled-software/ungoogled-chromium-windows), and Chromium. Their copyright notices and upstream credits are preserved.
 
-1. Check the [LLVM GitHub](https://github.com/llvm/llvm-project/releases/) for the latest version of LLVM.
-	1. Download `LLVM-*-win64.exe` file.
-	1. Get the SHA-512 checksum using `sha512sum` in **`MSYS2 MSYS`**.
-1. Check the esbuild version in file `build/src/third_party/devtools-frontend/src/DEPS` and find the closest release in the [esbuild GitHub](https://github.com/evanw/esbuild/releases) to it.
-	* Example: `version:3@0.24.0.chromium.2` should be `0.24.0`
-1. Check the ninja version in file `build/src/third_party/devtools-frontend/src/DEPS` and find the closest release in the [ninja GitHub](https://github.com/ninja-build/ninja/releases/) to it.
-	1. Download the `ninja-win.zip` file.
-	1. Get the SHA-512 checksum using `sha512sum` in **`MSYS2 MSYS`**.
-1. Check the [Git GitHub](https://github.com/git-for-windows/git/releases/) for the latest version of Git.
-	1. Get the SHA-256 checksum for `PortableGit-<version>-64-bit.7z.exe`.
-1. Check for commit hash changes of `src` submodule in `third_party/microsoft_dxheaders` (e.g. using GitHub `https://github.com/chromium/chromium/tree/<version>/third_party/microsoft_dxheaders`).
-	1. Replace `version` with the Chromium version in `ungoogled-chromium/chromium_version.txt`.
-1. Check the node version changes in `third_party/node/update_node_binaries` (e.g. using GitHub `https://github.com/chromium/chromium/tree/<version>/third_party/node/update_node_binaries`).
-	1. Download the "Standalone Binary" version from the [NodeJS website](https://nodejs.org/en/download).
-	1. Get the SHA-512 checksum using `sha512sum` in **`MSYS2 MSYS`**.
-1. Check for version changes of windows rust crate (`third_party/rust/windows_x86_64_msvc/`).
-	1. Download rust crate zip file.
-	1. Get the SHA-512 checksum using `sha512sum` in **`MSYS2 MSYS`**.
-	1. Update `patches/ungoogled-chromium/windows/windows-fix-building-with-rust.patch` accordingly.
-
-### Update rust
-1. Check `RUST_REVISION` constant in file `tools/rust/update_rust.py` in build root.
-	* Example: Revision could be `f7b43542838f0a4a6cfdb17fbeadf45002042a77`
-1. Get date for nightly rust build from the Rust GitHub page: `https://github.com/rust-lang/rust/commit/f7b43542838f0a4a6cfdb17fbeadf45002042a77`
-	1. Replace `RUST_REVISION` with the obtained value
-	1. Adapt `downloads.ini` accordingly
-	* Example: The above revision corresponds to the nightly build date `2025-03-14` (`YYYY-mm-dd`)
-1. Download nightly rust build from: `https://static.rust-lang.org/dist/<build-date>/rust-nightly-x86_64-pc-windows-msvc.tar.gz`
-	1. Replace `build-date` with the obtained value
-	1. Get the SHA-512 checksum using `sha512sum` in **`MSYS2 MSYS`**.
-	1. Extract archive
-	1. Execute `rustc\bin\rustc.exe -V` to get rust version string
-	1. Adapt `patches\ungoogled-chromium\windows\windows-fix-building-with-rust.patch` accordingly
-1. Download nightly rust build from: `https://static.rust-lang.org/dist/<build-date>/rust-nightly-i686-pc-windows-msvc.tar.gz`
-	1. Replace `build-date` with the obtained value
-	1. Get the SHA-512 checksum using `sha512sum` in **`MSYS2 MSYS`**.
-1. Download nightly rust build from: `https://static.rust-lang.org/dist/<build-date>/rust-nightly-aarch64-pc-windows-msvc.tar.gz`
-	1. Replace `build-date` with the obtained value
-	1. Get the SHA-512 checksum using `sha512sum` in **`MSYS2 MSYS`**.
-## License
-
-See [LICENSE](LICENSE)
+The repository is distributed under the **BSD-3-Clause** license. See [LICENSE](LICENSE).

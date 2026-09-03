@@ -1,0 +1,169 @@
+name: Prepare FK Build Environment
+description: Materialize an exact branded FK Chromium Windows build root
+inputs:
+  python_version:
+    description: Python version used by the upstream build
+    required: false
+    default: '3.12'
+  upstream_tag:
+    description: Exact ungoogled-chromium-windows tag to build
+    required: true
+  upstream_ref:
+    description: Exact upstream Windows wrapper commit resolved once for the staged build
+    required: true
+  fk_revision:
+    description: Positive FK release revision
+    required: true
+  force_rebuild:
+    description: Whether this build bypassed the duplicate-attempt guard
+    required: false
+    default: false
+  publish:
+    description: Whether a successful build may be published
+    required: false
+    default: false
+  branding_ref:
+    description: Exact FK branding commit resolved once for the staged build
+    required: true
+outputs:
+  upstream_version:
+    description: Four-part Chromium version
+    value: ${{ steps.metadata.outputs.upstream_version }}
+  release_tag:
+    description: FK Chromium release tag
+    value: ${{ steps.metadata.outputs.release_tag }}
+  publish:
+    description: Whether a successful build may be published
+    value: ${{ steps.metadata.outputs.publish }}
+  branding_commit:
+    description: Exact FK branding commit used by preparation
+    value: ${{ steps.metadata.outputs.branding_commit }}
+runs:
+  using: composite
+  steps:
+    - name: Checkout Windows build repository
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        path: fk-windows
+        persist-credentials: false
+
+    - name: Set up Python ${{ inputs.python_version }}
+      uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Validate exact upstream Windows tag
+      id: upstream_tag
+      shell: pwsh
+      env:
+        UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $tagJson = & python fk-windows\tools\release_metadata.py parse-tag --upstream-tag $env:UPSTREAM_TAG
+        if ($LASTEXITCODE -ne 0) {
+          throw "Invalid stable upstream Windows tag: $env:UPSTREAM_TAG"
+        }
+        $tagMetadata = $tagJson | ConvertFrom-Json
+        "upstream_version=$($tagMetadata.version)" >> $env:GITHUB_OUTPUT
+
+    - name: Checkout exact upstream Windows tag
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        repository: ungoogled-software/ungoogled-chromium-windows
+        ref: ${{ inputs.upstream_ref }}
+        path: upstream-windows
+        submodules: recursive
+        persist-credentials: false
+
+    - name: Verify pinned upstream Windows wrapper
+      shell: pwsh
+      env:
+        UPSTREAM_REF: ${{ inputs.upstream_ref }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        if ($env:UPSTREAM_REF -notmatch '^[0-9a-f]{40}$') {
+          throw 'Pinned upstream wrapper reference must be a full commit SHA'
+        }
+        $actual = (& git -C upstream-windows rev-parse HEAD).Trim()
+        if ($actual -ne $env:UPSTREAM_REF) {
+          throw 'upstream wrapper checkout does not match pinned SHA'
+        }
+
+    - name: Checkout FK branding
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        repository: firekula/fk-chromium
+        ref: ${{ inputs.branding_ref }}
+        path: fk-branding
+        persist-credentials: false
+
+    - name: Stage FK overlays
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        Copy-Item -LiteralPath 'fk-windows\tools' -Destination 'upstream-windows\tools' -Recurse -Force
+        Copy-Item -LiteralPath 'fk-windows\patches\fk-chromium' -Destination 'upstream-windows\patches\fk-chromium' -Recurse -Force
+        Copy-Item -LiteralPath 'fk-branding' -Destination 'upstream-windows\fk-branding' -Recurse -Force
+
+    - name: Prepare exact branded tree
+      shell: pwsh
+      working-directory: upstream-windows
+      run: python tools/prepare_upstream.py --upstream-root . --branding-root fk-branding
+
+    - name: Record build identity and publication gate
+      id: metadata
+      shell: pwsh
+      env:
+        UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+        UPSTREAM_REF: ${{ inputs.upstream_ref }}
+        UPSTREAM_VERSION: ${{ steps.upstream_tag.outputs.upstream_version }}
+        FK_REVISION: ${{ inputs.fk_revision }}
+        FORCE_REBUILD: ${{ inputs.force_rebuild }}
+        PUBLISH: ${{ inputs.publish }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $upstreamVersion = $env:UPSTREAM_VERSION
+        if ($env:FK_REVISION -notmatch '^[1-9][0-9]*$') {
+          throw 'FK revision must be a positive integer'
+        }
+        $fkRevision = [int]$env:FK_REVISION
+        $forceRebuild = [System.Convert]::ToBoolean($env:FORCE_REBUILD)
+        $publish = [System.Convert]::ToBoolean($env:PUBLISH)
+        $releaseTag = "$upstreamVersion-fk.$fkRevision"
+        $metadataPath = 'upstream-windows\build\fk-build-metadata.json'
+        $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+        if (-not $metadata.upstream_commit) {
+          throw 'Preparation metadata omitted the recursively checked out upstream commit'
+        }
+        $metadata | Add-Member -NotePropertyName windows_commit -NotePropertyValue ((& git -C fk-windows rev-parse HEAD).Trim()) -Force
+        $wrapperCommit = (& git -C upstream-windows rev-parse HEAD).Trim()
+        if ($wrapperCommit -ne $env:UPSTREAM_REF) {
+          throw 'upstream wrapper checkout does not match pinned SHA'
+        }
+        $metadata | Add-Member -NotePropertyName upstream_windows_commit -NotePropertyValue $wrapperCommit -Force
+        $metadata | Add-Member -NotePropertyName branding_commit -NotePropertyValue ((& git -C fk-branding rev-parse HEAD).Trim()) -Force
+        $metadata | Add-Member -NotePropertyName upstream_tag -NotePropertyValue $env:UPSTREAM_TAG -Force
+        $metadata | Add-Member -NotePropertyName upstream_version -NotePropertyValue $upstreamVersion -Force
+        $metadata | Add-Member -NotePropertyName fk_revision -NotePropertyValue $fkRevision -Force
+        $metadata | Add-Member -NotePropertyName force_rebuild -NotePropertyValue $forceRebuild -Force
+        $metadata | Add-Member -NotePropertyName publish -NotePropertyValue $publish -Force
+        $metadata | Add-Member -NotePropertyName release_tag -NotePropertyValue $releaseTag -Force
+        $metadata | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $metadataPath -Encoding utf8NoBOM
+        "upstream_version=$upstreamVersion" >> $env:GITHUB_OUTPUT
+        "release_tag=$releaseTag" >> $env:GITHUB_OUTPUT
+        "publish=$($publish.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+        "branding_commit=$($metadata.branding_commit)" >> $env:GITHUB_OUTPUT
+
+    - name: Materialize build root
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        if (Test-Path -LiteralPath 'C:\ungoogled-chromium-windows') {
+          throw 'Build root already exists'
+        }
+        Copy-Item -LiteralPath 'upstream-windows' -Destination 'C:\ungoogled-chromium-windows' -Recurse
+
+    - name: Install stage dependencies
+      shell: pwsh
+      working-directory: ./.github/actions/stage
+      run: npm ci --ignore-scripts

@@ -1,0 +1,21 @@
+{
+  "product": {
+    "full_name": "FK Chromium",
+    "chinese_name": "火焰库拉浏览器"
+  },
+  "windows_identity": {
+    "app_guid": "{385317E5-D454-45E9-9A3A-D240C07A3AC0}",
+    "active_setup_guid": "{6782E06C-9D57-4F60-906F-7BD0B6C5C935}",
+    "toast_activator_clsid": "{EFBECFD4-69ED-47B7-90F9-0ADD86CFD63A}",
+    "legacy_command_execute_clsid": "{15EEF2CB-C20F-4544-9E45-672B6F379E17}",
+    "elevation_service_clsid": "{DA37F775-297F-4681-8BE8-02A17F618849}",
+    "base_app_id": "FKChromium",
+    "install_subdir": "FK Chromium"
+  },
+  "assets": [
+    {
+      "source": "branding/generated/product_logo_16.png",
+      "destination": "chrome/app/theme/chromium/product_logo_16.png"
+    }
+  ]
+}

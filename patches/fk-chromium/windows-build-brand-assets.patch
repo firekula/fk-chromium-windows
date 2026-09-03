@@ -1,0 +1,20 @@
+diff --git a/build.py b/build.py
+index 2051e94..4df7a5e 100644
+--- a/build.py
++++ b/build.py
+@@ -226,7 +226,14 @@ def main():
+             source_tree,
+             patch_bin_path=(source_tree / _PATCH_BIN_RELPATH)
+         )
+-
++        subprocess.run([
++            sys.executable,
++            str(_ROOT_DIR / 'tools' / 'install_brand_assets.py'),
++            '--source-root', str(source_tree),
++            '--branding-root', str(_ROOT_DIR / 'fk-branding'),
++            '--manifest', str(_ROOT_DIR / 'fk-branding' / 'branding' / 'manifest.json'),
++        ], check=True)
++
+         # Substitute domains
+         domain_substitution_list = (_ROOT_DIR / 'ungoogled-chromium' / 'domain_substitution.list') if args.tarball else (_ROOT_DIR  / 'domain_substitution.list')
+         domain_substitution.apply_substitution(

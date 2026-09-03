@@ -1,17 +1,208 @@
 name: build-x64
 on:
+  workflow_call:
+    inputs:
+      upstream_tag:
+        description: Exact ungoogled-chromium-windows tag to build
+        type: string
+        required: true
+      fk_revision:
+        description: Positive FK release revision
+        type: number
+        required: false
+        default: 1
+      force_rebuild:
+        description: Bypass the duplicate-attempt guard
+        type: boolean
+        required: false
+        default: false
+      publish:
+        description: Allow a successful build to be published
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      finished:
+        description: Whether the staged build completed
+        value: ${{ jobs.build.outputs.finished }}
+      upstream_version:
+        description: Four-part Chromium version
+        value: ${{ jobs.build.outputs.upstream_version }}
+      release_tag:
+        description: FK Chromium release tag
+        value: ${{ jobs.build.outputs.release_tag }}
+      publish:
+        description: Whether the completed build may be published
+        value: ${{ jobs.build.outputs.publish }}
   workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: Exact ungoogled-chromium-windows tag to build
+        type: string
+        required: true
+      fk_revision:
+        description: Positive FK release revision
+        type: number
+        required: false
+        default: 1
+      force_rebuild:
+        description: Bypass the duplicate-attempt guard
+        type: boolean
+        required: false
+        default: false
+      publish:
+        description: Allow a successful build to be published
+        type: boolean
+        required: false
+        default: false
   push:
     tags:
       - '*'
+      - '!*-fk.*'
 
 permissions:
   contents: read
 
-concurrency:
-  group: build-x64-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
+  resolve-branding:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      branding_commit: ${{ steps.branding.outputs.branding_commit }}
+      upstream_windows_commit: ${{ steps.upstream.outputs.upstream_windows_commit }}
+    steps:
+      - name: Check out Windows release tooling
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          path: fk-windows
+          persist-credentials: false
+      - name: Create diagnostic locator before recursive checkout
+        shell: bash
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_tag || github.ref_name }}
+          FK_REVISION: ${{ github.event_name == 'push' && 1 || inputs.fk_revision }}
+          PUBLISH: ${{ inputs.publish || false }}
+          WINDOWS_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python fk-windows/tools/release_workflow.py create-failure-identity \
+            --upstream-tag "$UPSTREAM_TAG" \
+            --fk-revision "$FK_REVISION" \
+            --publish "$PUBLISH" \
+            --windows-commit "$WINDOWS_COMMIT" \
+            --output diagnostic-locator/fk-build-metadata.json
+      - name: Upload immutable build locator
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fk-chromium-windows-build-locator
+          path: diagnostic-locator/fk-build-metadata.json
+          if-no-files-found: error
+          retention-days: 4
+      - name: Check out exact upstream Windows source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ungoogled-software/ungoogled-chromium-windows
+          ref: ${{ inputs.upstream_tag || github.ref_name }}
+          path: upstream-windows
+          submodules: false
+          persist-credentials: false
+      - name: Bind canonical upstream tag to exact wrapper commit
+        id: upstream
+        shell: bash
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          wrapper="$(git -C upstream-windows rev-parse HEAD)"
+          tag_commit="$(git -C upstream-windows rev-parse "refs/tags/$UPSTREAM_TAG^{commit}")"
+          if [[ ! "$wrapper" =~ ^[0-9a-f]{40}$ ]] || [[ "$wrapper" != "$tag_commit" ]]; then
+            echo 'Canonical upstream tag did not resolve to the checked-out wrapper commit' >&2
+            exit 1
+          fi
+          echo "upstream_windows_commit=$wrapper" >> "$GITHUB_OUTPUT"
+      - name: Resolve FK branding default branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: firekula/fk-chromium
+          path: fk-branding
+          persist-credentials: false
+      - name: Record exact FK branding commit
+        id: branding
+        shell: bash
+        run: echo "branding_commit=$(git -C fk-branding rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Create immutable attempt identity before recursive checkout
+        shell: bash
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_tag || github.ref_name }}
+          FK_REVISION: ${{ github.event_name == 'push' && 1 || inputs.fk_revision }}
+          PUBLISH: ${{ inputs.publish || false }}
+          WINDOWS_COMMIT: ${{ github.sha }}
+          UPSTREAM_WINDOWS_COMMIT: ${{ steps.upstream.outputs.upstream_windows_commit }}
+        run: |
+          set -euo pipefail
+          wrapper="$UPSTREAM_WINDOWS_COMMIT"
+          common="$(git -C upstream-windows ls-tree HEAD ungoogled-chromium | awk 'NR == 1 {print $3}')"
+          if [[ ! "$wrapper" =~ ^[0-9a-f]{40}$ ]] || [[ ! "$common" =~ ^[0-9a-f]{40}$ ]]; then
+            wrapper=unresolved
+            common=unresolved
+          fi
+          python fk-windows/tools/release_workflow.py create-failure-identity \
+            --upstream-tag "$UPSTREAM_TAG" \
+            --fk-revision "$FK_REVISION" \
+            --publish "$PUBLISH" \
+            --windows-commit "$WINDOWS_COMMIT" \
+            --upstream-windows-commit "$wrapper" \
+            --upstream-commit "$common" \
+            --branding-commit "$(git -C fk-branding rev-parse HEAD)" \
+            --output diagnostic-identity/fk-build-metadata.json
+      - name: Upload immutable build identity
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fk-chromium-windows-build-identity
+          path: diagnostic-identity/fk-build-metadata.json
+          if-no-files-found: error
+          retention-days: 4
+      - name: Check out upstream Windows submodules recursively
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: ungoogled-software/ungoogled-chromium-windows
+          ref: ${{ steps.upstream.outputs.upstream_windows_commit }}
+          path: upstream-windows
+          submodules: recursive
+          persist-credentials: false
+      - name: Create validated pre-build diagnostic metadata
+        shell: bash
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_tag || github.ref_name }}
+          FK_REVISION: ${{ github.event_name == 'push' && 1 || inputs.fk_revision }}
+          FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
+          PUBLISH: ${{ inputs.publish || false }}
+        run: |
+          set -euo pipefail
+          python fk-windows/tools/release_workflow.py create-build-metadata \
+            --windows-repository fk-windows \
+            --upstream-windows-repository upstream-windows \
+            --branding-repository fk-branding \
+            --upstream-tag "$UPSTREAM_TAG" \
+            --fk-revision "$FK_REVISION" \
+            --force-rebuild "$FORCE_REBUILD" \
+            --publish "$PUBLISH" \
+            --output diagnostic/fk-build-metadata.json
+      - name: Upload immutable build diagnostic metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fk-chromium-windows-build-metadata
+          path: diagnostic/fk-build-metadata.json
+          if-no-files-found: error
+          retention-days: 4
   build:
+    needs: resolve-branding
     uses: ./.github/workflows/reusable-build.yml
+    with:
+      upstream_tag: ${{ inputs.upstream_tag || github.ref_name }}
+      upstream_ref: ${{ needs.resolve-branding.outputs.upstream_windows_commit }}
+      fk_revision: ${{ github.event_name == 'push' && 1 || inputs.fk_revision }}
+      force_rebuild: ${{ inputs.force_rebuild || false }}
+      publish: ${{ inputs.publish || false }}
+      branding_ref: ${{ needs.resolve-branding.outputs.branding_commit }}

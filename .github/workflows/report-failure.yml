@@ -1,0 +1,225 @@
+name: report-failure
+on:
+  workflow_run:
+    workflows:
+      - build-x64
+      - publish-release
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.context.outputs.artifact_id }}
+      artifact_name: ${{ steps.context.outputs.artifact_name }}
+      failure_kind: ${{ steps.context.outputs.failure_kind }}
+      ready: ${{ steps.ready.outputs.ready }}
+      run_attempt: ${{ steps.context.outputs.run_attempt }}
+      run_id: ${{ steps.context.outputs.run_id }}
+      version: ${{ steps.classify.outputs.version }}
+    steps:
+      - name: Check out trusted reporting tooling
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Re-fetch failed attempt, priority artifact, and attempt jobs
+        id: context
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          gh api "/repos/$REPOSITORY" > repository.json
+          gh api "/repos/$REPOSITORY/actions/runs/$RUN_ID" > run.json
+          RUN_ATTEMPT="$(python -c 'import json; print(json.load(open("run.json"))["run_attempt"])')"
+          [[ "$RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 1
+          case "$RUN_NAME" in
+            build-x64)
+              workflow_file=build-x64.yml
+              validation=(
+                --artifact-name fk-chromium-windows-build-metadata
+                --artifact-name fk-chromium-windows-build-identity
+                --artifact-name fk-chromium-windows-build-locator
+              )
+              failure_kind=build
+              ;;
+            publish-release)
+              workflow_file=publish-release.yml
+              validation=(
+                --artifact-name fk-chromium-publication-attempt
+                --expected-workflow-name publish-release
+                --expected-workflow-path .github/workflows/publish-release.yml
+                --allowed-event workflow_run
+              )
+              failure_kind=publication
+              ;;
+            *) exit 1 ;;
+          esac
+          echo "failure_kind=$failure_kind" >> "$GITHUB_OUTPUT"
+          gh api "/repos/$REPOSITORY/actions/workflows/$workflow_file" > workflow.json
+          gh api "/repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" > artifacts.json
+          gh api "/repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs?per_page=100" > jobs.json
+          python tools/release_workflow.py validate-run \
+            --run-json run.json \
+            --workflow-json workflow.json \
+            --artifacts-json artifacts.json \
+            --repository-json repository.json \
+            --repository "$REPOSITORY" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --expected-conclusion failure \
+            "${validation[@]}" \
+            --context-json validated-run.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Download exact highest-priority diagnostic artifact ID
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ steps.context.outputs.artifact_id }}
+          merge-multiple: true
+          path: artifacts/metadata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.context.outputs.run_id }}
+      - name: Classify from immutable identity and attempt-specific jobs
+        id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.context.outputs.failure_kind }}" == "publication" ]]; then
+            python tools/release_workflow.py classify-publication-failure \
+              --attempt artifacts/metadata/publication-attempt.json \
+              --context-json validated-run.json \
+              --jobs-json jobs.json \
+              --report-json failure-report.json \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            python tools/release_workflow.py classify-failure \
+              --metadata artifacts/metadata/fk-build-metadata.json \
+              --context-json validated-run.json \
+              --jobs-json jobs.json \
+              --report-json failure-report.json \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+      - name: Mark failure authorization complete
+        id: ready
+        shell: bash
+        run: echo "ready=true" >> "$GITHUB_OUTPUT"
+
+  report:
+    needs: validate
+    if: ${{ needs.validate.outputs.ready == 'true' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: report-failure-${{ needs.validate.outputs.version }}
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - name: Check out trusted reporting tooling
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Re-fetch same failed attempt, artifact ID, and jobs
+        id: context
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ needs.validate.outputs.run_id }}
+          RUN_ATTEMPT: ${{ needs.validate.outputs.run_attempt }}
+          ARTIFACT_ID: ${{ needs.validate.outputs.artifact_id }}
+          REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          FAILURE_KIND: ${{ needs.validate.outputs.failure_kind }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          [[ "$RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || exit 1
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          gh api "/repos/$REPOSITORY" > repository.json
+          gh api "/repos/$REPOSITORY/actions/runs/$RUN_ID" > run.json
+          case "$FAILURE_KIND" in
+            build)
+              workflow_file=build-x64.yml
+              validation=(
+                --artifact-name fk-chromium-windows-build-metadata
+                --artifact-name fk-chromium-windows-build-identity
+                --artifact-name fk-chromium-windows-build-locator
+              )
+              ;;
+            publication)
+              workflow_file=publish-release.yml
+              validation=(
+                --artifact-name fk-chromium-publication-attempt
+                --expected-workflow-name publish-release
+                --expected-workflow-path .github/workflows/publish-release.yml
+                --allowed-event workflow_run
+              )
+              ;;
+            *) exit 1 ;;
+          esac
+          gh api "/repos/$REPOSITORY/actions/workflows/$workflow_file" > workflow.json
+          gh api "/repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100" > artifacts.json
+          gh api "/repos/$REPOSITORY/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs?per_page=100" > jobs.json
+          python tools/release_workflow.py validate-run \
+            --run-json run.json \
+            --workflow-json workflow.json \
+            --artifacts-json artifacts.json \
+            --repository-json repository.json \
+            --repository "$REPOSITORY" \
+            --default-branch "$DEFAULT_BRANCH" \
+            --expected-conclusion failure \
+            "${validation[@]}" \
+            --expected-run-attempt "$RUN_ATTEMPT" \
+            --expected-artifact-id "$ARTIFACT_ID" \
+            --context-json validated-run.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Download the same exact diagnostic artifact ID
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.validate.outputs.artifact_id }}
+          merge-multiple: true
+          path: artifacts/metadata
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.validate.outputs.run_id }}
+      - name: Re-classify from immutable identity and fresh attempt jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ needs.validate.outputs.failure_kind }}" == "publication" ]]; then
+            python tools/release_workflow.py classify-publication-failure \
+              --attempt artifacts/metadata/publication-attempt.json \
+              --context-json validated-run.json \
+              --jobs-json jobs.json \
+              --report-json failure-report.json
+          else
+            python tools/release_workflow.py classify-failure \
+              --metadata artifacts/metadata/fk-build-metadata.json \
+              --context-json validated-run.json \
+              --jobs-json jobs.json \
+              --report-json failure-report.json
+          fi
+      - name: Report under the fk-build-failure label
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python tools/release_workflow.py report-failure \
+            --repository "$REPOSITORY" \
+            --report-json failure-report.json

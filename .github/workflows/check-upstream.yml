@@ -1,0 +1,185 @@
+name: check-upstream
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: Optional exact canonical stable tag; required for force_rebuild or rerelease; blank selects latest
+        type: string
+        required: false
+        default: ''
+      force_rebuild:
+        description: Retry only when this exact tag owns the lowest unresolved revision for its Chromium version
+        type: boolean
+        required: false
+        default: false
+      rerelease:
+        description: Rejects while this Chromium version has an unresolved reservation; retry its exact tag first with force_rebuild
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-upstream
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should_build: ${{ steps.candidate.outputs.should_build }}
+      upstream_tag: ${{ steps.candidate.outputs.upstream_tag }}
+      upstream_version: ${{ steps.candidate.outputs.upstream_version }}
+      fk_revision: ${{ steps.candidate.outputs.fk_revision }}
+    steps:
+      - name: Check out current default branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Detect candidate
+        id: candidate
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REQUESTED_UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+          FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
+          RERELEASE: ${{ inputs.rerelease || false }}
+        run: |
+          set -euo pipefail
+          if [[ "$FORCE_REBUILD" == "true" && "$RERELEASE" == "true" ]]; then
+            echo 'force_rebuild and rerelease are mutually exclusive' >&2
+            exit 1
+          fi
+          if [[ "$RERELEASE" == "true" && -z "$REQUESTED_UPSTREAM_TAG" ]]; then
+            echo 'rerelease requires an exact upstream_tag' >&2
+            exit 1
+          fi
+          if [[ "$FORCE_REBUILD" == "true" && -z "$REQUESTED_UPSTREAM_TAG" ]]; then
+            echo 'force_rebuild requires an exact upstream_tag' >&2
+            exit 1
+          fi
+          arguments=(--state release-state.json)
+          if [[ -n "$REQUESTED_UPSTREAM_TAG" ]]; then
+            arguments+=(--upstream-tag "$REQUESTED_UPSTREAM_TAG")
+          fi
+          if [[ "$FORCE_REBUILD" == "true" ]]; then
+            arguments+=(--force)
+          fi
+          if [[ "$RERELEASE" == "true" ]]; then
+            arguments+=(--rerelease)
+          fi
+          candidate="$(python tools/check_upstream.py "${arguments[@]}")"
+          CANDIDATE_JSON="$candidate" python - <<'PY'
+          import json
+          import os
+
+          candidate = json.loads(os.environ["CANDIDATE_JSON"])
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"should_build={'true' if candidate is not None else 'false'}", file=output)
+              for field in ("upstream_tag", "upstream_version", "fk_revision"):
+                  print(f"{field}={'' if candidate is None else candidate[field]}", file=output)
+          PY
+
+  record-and-dispatch:
+    needs: detect
+    if: needs.detect.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+    outputs:
+      should_build: ${{ steps.recheck.outputs.should_build }}
+      upstream_tag: ${{ steps.recheck.outputs.upstream_tag }}
+      upstream_version: ${{ steps.recheck.outputs.upstream_version }}
+      fk_revision: ${{ steps.recheck.outputs.fk_revision }}
+    steps:
+      - name: Check out current default branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Recheck candidate and record attempt
+        id: recheck
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          UPSTREAM_TAG: ${{ needs.detect.outputs.upstream_tag }}
+          REQUESTED_UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+          FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
+          RERELEASE: ${{ inputs.rerelease || false }}
+        run: |
+          set -euo pipefail
+          if [[ "$FORCE_REBUILD" == "true" && "$RERELEASE" == "true" ]]; then
+            echo 'force_rebuild and rerelease are mutually exclusive' >&2
+            exit 1
+          fi
+          if [[ "$RERELEASE" == "true" && -z "$REQUESTED_UPSTREAM_TAG" ]]; then
+            echo 'rerelease requires an exact upstream_tag' >&2
+            exit 1
+          fi
+          if [[ "$FORCE_REBUILD" == "true" && -z "$REQUESTED_UPSTREAM_TAG" ]]; then
+            echo 'force_rebuild requires an exact upstream_tag' >&2
+            exit 1
+          fi
+          git pull --ff-only origin "$DEFAULT_BRANCH"
+          arguments=(
+            --state release-state.json
+            --upstream-tag "$UPSTREAM_TAG"
+            --record-attempt
+          )
+          if [[ "$FORCE_REBUILD" == "true" ]]; then
+            arguments+=(--force)
+          fi
+          if [[ "$RERELEASE" == "true" ]]; then
+            arguments+=(--rerelease)
+          fi
+          candidate="$(python tools/check_upstream.py "${arguments[@]}")"
+          CANDIDATE_JSON="$candidate" python - <<'PY'
+          import json
+          import os
+
+          candidate = json.loads(os.environ["CANDIDATE_JSON"])
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"should_build={'true' if candidate is not None else 'false'}", file=output)
+              for field in ("upstream_tag", "upstream_version", "fk_revision"):
+                  print(f"{field}={'' if candidate is None else candidate[field]}", file=output)
+          PY
+      - name: Commit recorded attempt
+        if: steps.recheck.outputs.should_build == 'true'
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          UPSTREAM_TAG: ${{ steps.recheck.outputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- release-state.json
+          if git diff --cached --quiet; then
+            echo "Candidate did not produce a recorded state change" >&2
+            exit 1
+          fi
+          git commit -m "ci: record upstream attempt $UPSTREAM_TAG [skip ci]"
+          git push origin "HEAD:$DEFAULT_BRANCH"
+      - name: Dispatch FK x64 build
+        if: steps.recheck.outputs.should_build == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          UPSTREAM_TAG: ${{ steps.recheck.outputs.upstream_tag }}
+          FK_REVISION: ${{ steps.recheck.outputs.fk_revision }}
+          FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
+        run: |
+          set -euo pipefail
+          gh workflow run build-x64.yml \
+            --ref "$DEFAULT_BRANCH" \
+            --raw-field "upstream_tag=$UPSTREAM_TAG" \
+            --raw-field "fk_revision=$FK_REVISION" \
+            --raw-field "force_rebuild=$FORCE_REBUILD" \
+            --raw-field "publish=true"
