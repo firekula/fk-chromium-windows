@@ -74,8 +74,9 @@ def test_build_inputs_include_safe_nonpublishing_default_and_outputs():
     assert re.search(r"(?m)^\s{6}release_tag:$", reusable)
     assert re.search(r"(?m)^\s{6}publish:$", reusable)
 
-    assert "group: fk-x64-${{ inputs.upstream_tag }}" in reusable
-    assert "cancel-in-progress: false" in reusable
+    assert "concurrency:" not in reusable
+    assert "group: fk-x64-${{ inputs.upstream_tag || github.ref_name }}" in entrypoint
+    assert "cancel-in-progress: false" in entrypoint
 
 
 def test_publish_gate_has_no_event_based_bypass():

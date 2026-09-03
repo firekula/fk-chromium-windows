@@ -44,10 +44,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: fk-x64-${{ inputs.upstream_tag }}
-  cancel-in-progress: false
-
 jobs:
   build-1:
     runs-on: windows-2022
