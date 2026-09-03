@@ -92,7 +92,12 @@ def test_entrypoint_defaults_revision_only_for_push_without_coercing_caller_zero
     """An explicit zero must reach validation; only a push lacking inputs gets revision one."""
     entrypoint = _read(_WORKFLOWS / "build-x64.yml")
 
-    assert "fk_revision: ${{ github.event_name == 'push' && 1 || inputs.fk_revision }}" in entrypoint
+    assert (
+        "fk_revision: ${{ fromJSON(github.event_name == 'push' && '1' || "
+        "format('{0}', inputs.fk_revision)) }}"
+        in entrypoint
+    )
+    assert "fk_revision: ${{ github.event_name == 'push' && 1 || inputs.fk_revision }}" not in entrypoint
     assert "fk_revision: ${{ inputs.fk_revision || 1 }}" not in entrypoint
 
     # The other fallback expressions are type-safe: false remains false, while a

@@ -172,7 +172,7 @@ jobs:
     with:
       upstream_tag: ${{ inputs.upstream_tag || github.ref_name }}
       upstream_ref: ${{ needs.resolve-branding.outputs.upstream_windows_commit }}
-      fk_revision: ${{ github.event_name == 'push' && 1 || inputs.fk_revision }}
+      fk_revision: ${{ fromJSON(github.event_name == 'push' && '1' || format('{0}', inputs.fk_revision)) }}
       force_rebuild: ${{ inputs.force_rebuild || false }}
       publish: ${{ inputs.publish || false }}
       branding_ref: ${{ needs.resolve-branding.outputs.branding_commit }}
