@@ -1,1 +1,11 @@
-{"last_success": null, "attempted": [], "revisions": {}, "assignments": {}, "successes": {}}
+{
+  "assignments": {
+    "152.0.7977.75-1.1": 1
+  },
+  "attempted": [
+    "152.0.7977.75-1.1"
+  ],
+  "last_success": null,
+  "revisions": {},
+  "successes": {}
+}
